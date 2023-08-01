@@ -1,0 +1,227 @@
+#Loading tpdata
+# Types are:
+# 1 -> NL
+# 2 -> MCI
+# 3-> AD
+
+
+
+
+
+import numpy as np
+import pandas as pd
+import esig
+tpdata=pd.read_csv("ADNI/tpdata.csv",header=None)
+
+
+#Eliminating measurement of month 3 in AD people
+rows_ad=tpdata[tpdata[4]==3]
+rows_ad_with_month_equal_3=rows_ad[rows_ad[3]==3]
+tpdata.drop(row_ad_with_month_equal_3.index,inplace=True)
+
+
+
+#Sorting rows for each individual
+tpdata1=tpdata.iloc[:,0]
+values=set(tpdata1.values.flatten())
+for individual in values:
+    individual_index=np.where(tpdata.iloc[:,0]==individual)[0]
+    if len(individual_index)>0:
+        tpdata.iloc[individual_index_ad].sort_values(by=3)
+
+
+
+
+
+
+#Eliminating months excedding 24
+exceeding_months_indexes=np.where(tpdata[3]>24)[0]
+rows_exceeding=tpdata[tpdata[3]>24]
+tpdata.drop(rows_exceeding.index,inplace=True)
+
+#eliminating non classified people
+non_class_indexes=np.where(tpdata[4]==0)[0]
+rows_non_class=tpdata[tpdata[4]==0]
+tpdata.drop(rows_non_class.index,inplace=True)
+
+#Selecting only the columns of: 
+tpdata=tpdata.iloc[:,[0,4,5,21,22,33]]
+tpdata.columns=["Individual", "Type","Measurement","Hippocampal Volume", "Brain Volume", "Ventricle Volume"]
+
+#Normalizing values
+
+
+tpdata.iloc[:,3]=tpdata.iloc[:,3]/10000
+tpdata.iloc[:,5]=tpdata.iloc[:,5]/100000
+tpdata.iloc[:,4]=tpdata.iloc[:,4]/1000000
+
+tpdata=tpdata.dropna()
+
+
+# Normalizing measurements
+tpdata1=tpdata.iloc[:,0]
+values=set(tpdata.values.flatten())
+for individual in values:
+    individual_index=np.where(tpdata.iloc[:,0]==individual)[0]
+    if len(individual_index)>0:
+        tpdata.iloc[individual_index,2]=(tpdata.iloc[individual_index,2]-tpdata.iloc[individual_index[0],2])/30
+
+
+#Selecting only time series with a certain length
+big_individuals=[]
+for individual, individual_data in tpdata.groupby("Individual"):
+    if len(individual_data)>3:
+        big_individuals.append(individual)
+        
+newdata=tpdata[tpdata["Individual"].isin(big_individuals)]
+
+
+#Creating feature vectors and labels
+labels=[]
+Feature_vectors_sig=list()
+for individual, individual_data in newdata.groupby("Individual"):
+    individual_timeseries=individual_data.iloc[:,[2,3,4,5]].to_numpy()
+    individual_signature=esig.stream2sig(individual_timeseries,2)[1:]
+    individual_baseline=individual_timeseries[0][[1,2,3]]
+    individual_feature_vector=np.concatenate([individual_baseline,individual_signature])
+    individual_feature_vector[3:]=individual_feature_vector[3:]*10
+    individual_feature_vector[[0,1,2]]=individual_feature_vector[[0,1,2]]
+    Feature_vectors_sig.append(individual_feature_vector)
+    labels.append(individual_data.iloc[0,1])
+
+Feature_vectors_sig_matrix=np.array(Feature_vectors_sig)
+
+#Running tests
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+
+#Separate data into train and test
+X_train, X_test, y_train, y_test=train_test_split(Feature_vectors_sig_matrix,labels,test_size=0.33)
+
+# Train model on X_train
+clf=RandomForestClassifier().fit(X_train,y_train)
+
+#Predict Labels of X_test
+y_predicted=clf.predict(X_test)
+
+
+#Compare predicted labels with y
+accuracy_score(y_test,y_predicted)
+
+
+#Running test with log signature
+lab_log=[]
+Feataure_vectors_log=list()
+for individual, individual_data in newdata.groupby("Individual"):
+    individual_timeseries=individual_data.iloc[:,[2,3,4,5]].to_numpy()
+    individual_signature=esig.stream2logsig(individual_timeseries,2)
+    individual_baseline=individual_timeseries[0][[1,2,3]]
+    individual_feature_vector=np.concatenate([individual_baseline,individual_signature])
+    Feature_vectors_log.append(individual_feature_vector)
+    lab_log.append(individual_data.iloc[0,1])
+
+Feat_log=np.array(Feature_vectors_sig)
+
+#Separate data into train and test
+X_train_log, X_test_log, y_train_log, y_test_log=train_test_split(Feat_log,lab_log,test_size=0.2)
+
+# Train model on X_train
+clf=RandomForestClassifier().fit(X_train_log,y_train_log)
+
+#Predict Labels of X_test
+y_predicted_log=clf.predict(X_test_log)
+
+
+#Compare predicted labels with y
+accuracy_score(y_test_log,y_predicted_log)
+
+
+
+#Doing classification only between NL and AD
+
+not2=[]
+for individual, individual_data in newdata.groupby("Individual"):
+    if ( not (individual_data.iloc[:,1]==2).any()):
+        not2.append(individual)
+newdata2=newdata[newdata["Individual"].isin(not2)]
+
+
+labels2=[]
+Feature_vectors_sig2=list()
+for individual, individual_data in newdata2.groupby("Individual"):
+    individual_timeseries=individual_data.iloc[:,[2,3,4,5]].to_numpy()
+    individual_signature=esig.stream2sig(individual_timeseries,2)[1:]
+    individual_baseline=individual_timeseries[0][[1,2,3]]
+    individual_feature_vector=np.concatenate([individual_baseline,individual_signature])
+    Feature_vectors_sig2.append(individual_feature_vector)
+    labels2.append(individual_data.iloc[0,1])
+Feat2=np.array(Feature_vectors_sig2)
+
+
+#Separate data into train and test
+X_train2, X_test2, y_train2, y_test2=train_test_split(Feat2,labels2,test_size=0.33)
+# Train model on X_train
+clf=RandomForestClassifier().fit(X_train2,y_train2)
+
+#Predict Labels of X_test
+y_predicted2=clf.predict(X_test2)
+
+
+#Compare predicted labels with y
+accuracy_score(y_test2,y_predicted2)
+
+
+
+#Doing classification only between AD and MCI
+not1=[]
+for individual, individual_data in newdata.groupby("Individual"):
+    if ( not (individual_data.iloc[:,1]==1).any()) :
+        not1.append(individual)
+        
+newdata1=newdata[newdata["Individual"].isin(not1)]
+
+labels1=[]
+Feature_vectors_sig1=list()
+for individual, individual_data in newdata1.groupby("Individual"):
+    individual_timeseries=individual_data.iloc[:,[2,3,4,5]].to_numpy()
+    individual_signature=esig.stream2sig(individual_timeseries,2)[1:]
+    individual_baseline=individual_timeseries[0][[1,2,3]]
+    individual_feature_vector=np.concatenate([individual_baseline,individual_signature])
+    Feature_vectors_sig1.append(individual_feature_vector)
+    labels1.append(individual_data.iloc[0,1])
+Feat1=np.array(Feature_vectors_sig1)
+
+#Separate data into train and test
+X_train1, X_test1, y_train1, y_test1=train_test_split(Feat1,labels1,test_size=0.33)
+# Train model on X_train
+clf=RandomForestClassifier().fit(X_train1,y_train1)
+
+#Predict Labels of X_test
+y_predicted1=clf.predict(X_test1)
+
+
+#Compare predicted labels with y
+accuracy_score(y_test1,y_predicted1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
